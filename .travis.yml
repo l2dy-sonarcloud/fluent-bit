@@ -1,23 +1,14 @@
 dist: bionic
 language: c
 
-git:
-  depth: 3
-
 arch:
   - amd64
-  - arm64
 
 compiler:
   - gcc
-  - clang
 
 env:
-  - FLB_OPT="-DFLB_JEMALLOC=On"
-  - FLB_OPT="-DFLB_JEMALLOC=Off"
-  - FLB_OPT="-DFLB_SMALL=On"
-  - FLB_OPT="-DSANITIZE_ADDRESS=On"
-  - FLB_OPT="-DSANITIZE_UNDEFINED=On"
+  - FLB_OPT="-DFLB_TLS=On -DFLB_HTTP_SERVER=On -DFLB_OUT_KAFKA=On"
 
 # Disable Memory Sanitizer since it causes conflicts on coroutines
 # interfaces. We need to add the stack registrations otherwise it
@@ -37,36 +28,11 @@ before_script:
 
 matrix:
   include:
-    - os: osx
-      env: FLB_OPT="-DFLB_JEMALLOC=Off"
-      script: |
-        brew update
-        brew install bison flex || true
-        ci/do-ut || true
     - os: linux
       env: FLB_OPT="-DFLB_COVERAGE=On"
       dist: bionic
       language: c
       compiler: gcc
-      script: |
-        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 90
-        sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-7 90
-        sudo usermod -a -G systemd-journal $(id -un)
-        sudo -E su -p travis -c "PATH=$PATH ci/do-ut"
-    - os: linux
-      services:
-        - docker
-      dist: bionic
-      language: c
-      compiler: gcc
-      env: DOCKER_BUILD=1
-      script: |
-        echo "===== BUILD DOCKER IMAGE ======="
-        docker build -t test-image -f Dockerfile .
-      addons:
-        apt:
-          sources: {}
-          packages: {}
 
 script: |
   echo "CC = $CC, CXX = $CXX"
@@ -74,7 +40,16 @@ script: |
   sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-7 90
   sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-6.0 90
   sudo usermod -a -G systemd-journal $(id -un)
-  sudo -E su -p travis -c "PATH=$PATH ci/do-ut"
+  #sudo -E su -p travis -c "PATH=$PATH build-wrapper-linux-x86-64 --out-dir bw-output ci/do-ut"
+  # Wraps the compilation with the Build Wrapper to generate configuration (used
+  # later by the SonarScanner) into the "bw-output" folder
+  cd build
+  cmake $FLB_OPT ..
+  cd ..
+  build-wrapper-linux-x86-64 --out-dir bw-output cmake --build build/
+  # And finally run the SonarCloud analysis - read the "sonar-project.properties"
+  # file to see the specific configuration
+  sonar-scanner -Dsonar.cfamily.build-wrapper-output=bw-output -Dsonar.cfamily.threads=2 -Dsonar.cfamily.cache.enabled=false
 addons:
   apt:
     sources:
@@ -85,3 +60,7 @@ addons:
       - clang-6.0
       - libsystemd-dev
       - gcovr
+  sonarcloud:
+    organization: "l2dy-sonarcloud"
+    token:
+      secure: "NMmo2nO8tD+ylUcafbNr1WhdWjmo0ixGzxKch0RpqbCi/eVRk5sRSYgrJcqDxsmZzrCSEXObzZqCoQRJwTbZZMl4x18RVjyvKRay+9ysAlgFWoAvFaetAt3uJp5vH9lEdqdrsApKoHSWKXRwGxt5a/Xn2qR5/PLNsNeVnvhme9VJoxsj6TTN7NdZDHNvyPqhja4n+25rCYEZnopJd2MEYfc5WBXscPntMyLrQz08i6QStQwEgFBpoG+5QcgV2pynAaFfIl+UvyKXUlweM6URDsMlMcTzav7u8Y9dszaqrLk41gbDeGSruXM4DnhWB5fg8LFHRn+Yt5ly1ihI8njIcuMBWOBcj4VbLiRyJmYhTfiujEyK1OYVv/RLLJ7PBRDdjPPUKuVSXWoVNB4u2AJ2VXU0fmOKPd3amfpYQgPb/IORRYW7XP8S/Qnm200rrcuqatzaGWyRMsLNxBO7v8M+PBmsnTyZq7TYIMEfR0Ss1qCsTvY/wv3IhduCNZpmYazAgHrkm6xY7Yuixe12+MMwUmrG5i/0oT6FI5f1zQWYrn/v7Lb7Gmk/uccFDFZUQ5rTFzPPZWXBxOoYvfSV81GuZcQsMjyvKEyI/ggWmN3cOr4NZ7R86ggOYFggB9WtjMPGLWcFU5Dm3vL1ANAbdLg3z+7zGua01rPSilfSM6U+8zQ=" # encrypted value of your token
